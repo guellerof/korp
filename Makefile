@@ -1,4 +1,4 @@
-.PHONY: build test vet up down logs clean validate
+.PHONY: build test vet up down logs clean validate metrics load
 
 build:
 	cd app && go build ./...
@@ -23,3 +23,10 @@ clean:
 
 validate:
 	curl -fsS http://localhost/projeto-korp
+
+metrics:
+	curl -fsS http://localhost/metrics | grep -E 'http_requests_total|http_request_duration_seconds'
+
+load:
+	@i=0; while [ $$i -lt 100 ]; do curl -fsS http://localhost/projeto-korp >/dev/null; i=$$((i+1)); done
+	@echo "100 requisicoes enviadas para /projeto-korp"
