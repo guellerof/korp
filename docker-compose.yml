@@ -70,7 +70,8 @@ services:
 
 networks:
   korp-network:
-    driver: bridge
+    name: korp-network
+    external: true
 
 volumes:
   prometheus-data:

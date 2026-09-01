@@ -1,24 +1,18 @@
 # http-server-projeto-korp
 
-Desafio técnico Korp — serviço HTTP em Go, containerizado, publicado por NGINX e monitorado com Prometheus e Grafana.
+Desafio técnico Korp — serviço HTTP em Go, containerizado, publicado por NGINX, monitorado com Prometheus/Grafana e provisionado com Ansible.
 
 ## Arquitetura
 
 ```text
 Cliente -> localhost:80 -> NGINX -> http-server-projeto-korp:8080
-                                      |        ^
-                                      |        |
-                                      |     Prometheus:9090
-                                      |        ^
-                                      |        |
-                                      |     Grafana:3000
                                       |
                                       +-> /projeto-korp
                                       +-> /healthz
-                                      +-> /metrics
+                                      +-> /metrics <- Prometheus:9090 <- Grafana:3000
 ```
 
-Todos os containers compartilham a rede bridge `korp-network`. A aplicação não publica a porta 8080 no host; somente o NGINX é o ponto de entrada da aplicação. Prometheus e Grafana publicam 9090 e 3000 para demonstração e análise do desafio.
+Todos os containers compartilham a rede bridge explícita `korp-network`. A aplicação não publica a porta 8080 no host; somente o NGINX é o ponto de entrada da aplicação. Prometheus e Grafana publicam 9090 e 3000 para demonstração e análise do desafio.
 
 ## API
 
@@ -50,7 +44,7 @@ As rotas são normalizadas (`/projeto-korp`, `/healthz` e `unknown`) para evitar
 
 ## Monitoramento
 
-Prometheus coleta `http-server-projeto-korp:8080/metrics` a cada 15 segundos. A métrica nativa do Prometheus `up{job="http-server-projeto-korp"}` representa a disponibilidade do target.
+Prometheus coleta `http-server-projeto-korp:8080/metrics` a cada 15 segundos. A métrica nativa `up{job="http-server-projeto-korp"}` representa a disponibilidade do target.
 
 Grafana recebe o datasource Prometheus e o dashboard automaticamente por provisioning. Não é necessário criar datasource ou importar JSON manualmente.
 
@@ -76,9 +70,13 @@ sum by (status) (rate(http_requests_total{route="/projeto-korp"}[5m]))
 
 ```text
 .
+├── ansible/
+│   ├── inventory.ini
+│   └── playbook.yml
 ├── app/
 │   ├── Dockerfile
 │   ├── go.mod
+│   ├── go.sum
 │   ├── main.go
 │   └── main_test.go
 ├── grafana/
@@ -96,23 +94,47 @@ sum by (status) (rate(http_requests_total{route="/projeto-korp"}[5m]))
 └── README.md
 ```
 
-## Pré-requisitos
+## Provisionamento com Ansible
 
-- Linux
-- Docker Engine
-- Docker Compose v2
-- Go 1.24+ somente para desenvolvimento/testes locais
+O caminho principal de execução do desafio é o playbook Ansible. Ele suporta explicitamente Ubuntu e Debian e deve ser executado por um usuário com acesso a `sudo`.
 
-## Execução
+Na máquina Linux, instale apenas o Ansible e execute, a partir da raiz do repositório:
 
 ```bash
-docker compose up -d --build
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --ask-become-pass
 ```
 
-ou:
+Em ambientes nos quais o usuário já possui `sudo` sem senha, pode ser usado:
 
 ```bash
-make up
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+```
+
+Com um único comando, o playbook:
+
+1. valida se o host é Ubuntu ou Debian;
+2. instala e configura o repositório oficial do Docker;
+3. instala Docker Engine, Buildx e Docker Compose v2;
+4. habilita e inicia o Docker;
+5. copia aplicação e configurações para `/opt/http-server-projeto-korp`;
+6. cria a rede bridge `korp-network` somente quando ela ainda não existe;
+7. valida o arquivo Compose;
+8. reconcilia a stack com `docker compose up -d --build --remove-orphans`;
+9. aguarda o serviço responder através do NGINX;
+10. exibe no console a resposta JSON de `/projeto-korp`;
+11. valida readiness do Prometheus e health do Grafana.
+
+A rede é criada explicitamente pelo Ansible e declarada como `external` no Compose. Isso deixa clara a separação de responsabilidades: Ansible provisiona a infraestrutura Docker e o Compose gerencia os containers da aplicação.
+
+O playbook pode ser executado novamente com segurança: pacotes, arquivos, serviço Docker e rede são tratados de forma declarativa ou condicional, enquanto o `docker compose up` reconcilia o estado desejado dos containers. Como a CLI do Compose não fornece ao Ansible uma indicação estável de mudança em todas as versões, essa etapa é reportada como `ok`; o estado real é validado pelos endpoints ao final do playbook.
+
+## Execução manual com Docker
+
+Como a rede é provisionada explicitamente, para executar o Compose sem Ansible crie-a primeiro:
+
+```bash
+docker network inspect korp-network >/dev/null 2>&1 || docker network create --driver bridge korp-network
+docker compose up -d --build
 ```
 
 ## URLs
@@ -153,6 +175,9 @@ make vet
 
 ## Decisões técnicas
 
+- **Ansible como orquestrador do provisionamento:** prepara o host, instala Docker, cria a rede e executa/valida a stack.
+- **Reexecução segura:** módulos declarativos são usados para pacotes, arquivos e serviços; a rede só é criada quando não existe e o Compose reconcilia os containers.
+- **Rede bridge explícita:** `korp-network` é criada pelo Ansible e consumida pelo Compose como rede externa.
 - **Go + biblioteca padrão:** mantém o serviço simples; `client_golang` é utilizado apenas para instrumentação Prometheus.
 - **Métricas com baixa cardinalidade:** labels usam método, rota normalizada e status, evitando paths arbitrários.
 - **Scrape fora da instrumentação:** `/metrics` não incrementa o contador de tráfego da própria aplicação.
@@ -175,7 +200,3 @@ make metrics
 make load
 make down
 ```
-
-## Próxima etapa
-
-A Parte 3 adicionará Ansible para instalar/configurar Docker, provisionar o ambiente completo e validar o serviço com um único comando.

@@ -1,4 +1,4 @@
-.PHONY: build test vet up down logs clean validate metrics load
+.PHONY: build test vet network up down logs clean validate metrics load provision
 
 build:
 	cd app && go build ./...
@@ -9,7 +9,10 @@ test:
 vet:
 	cd app && go vet ./...
 
-up:
+network:
+	@docker network inspect korp-network >/dev/null 2>&1 || docker network create --driver bridge korp-network
+
+up: network
 	docker compose up -d --build
 
 down:
@@ -30,3 +33,6 @@ metrics:
 load:
 	@i=0; while [ $$i -lt 100 ]; do curl -fsS http://localhost/projeto-korp >/dev/null; i=$$((i+1)); done
 	@echo "100 requisicoes enviadas para /projeto-korp"
+
+provision:
+	ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
