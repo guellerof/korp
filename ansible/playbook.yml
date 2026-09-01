@@ -16,8 +16,8 @@
     - name: Validate supported operating system
       ansible.builtin.assert:
         that:
-          - ansible_os_family == 'Debian'
-        fail_msg: This playbook supports Debian/Ubuntu systems.
+          - ansible_distribution in ['Ubuntu', 'Debian']
+        fail_msg: This playbook supports Ubuntu and Debian only.
 
   tasks:
     - name: Install Docker repository prerequisites
@@ -121,20 +121,12 @@
         chdir: "{{ korp_project_dir }}"
       changed_when: false
 
-    - name: Build and start Korp stack
+    - name: Reconcile Korp stack with Docker Compose
       ansible.builtin.command:
         cmd: docker compose up -d --build --remove-orphans
         chdir: "{{ korp_project_dir }}"
       register: compose_up
-      changed_when: >-
-        'Creating' in compose_up.stderr or
-        'Created' in compose_up.stderr or
-        'Starting' in compose_up.stderr or
-        'Started' in compose_up.stderr or
-        'Recreating' in compose_up.stderr or
-        'Recreated' in compose_up.stderr or
-        'Building' in compose_up.stderr or
-        'Built' in compose_up.stderr
+      changed_when: false
 
     - name: Wait for application through NGINX
       ansible.builtin.uri:
