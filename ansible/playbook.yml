@@ -1,0 +1,172 @@
+---
+- name: Provision Korp challenge environment
+  hosts: korp
+  become: true
+  gather_facts: true
+
+  vars:
+    korp_project_dir: /opt/http-server-projeto-korp
+    korp_network: korp-network
+    docker_arch_map:
+      x86_64: amd64
+      aarch64: arm64
+    docker_arch: "{{ docker_arch_map.get(ansible_architecture, ansible_architecture) }}"
+
+  pre_tasks:
+    - name: Validate supported operating system
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Debian'
+        fail_msg: This playbook supports Debian/Ubuntu systems.
+
+  tasks:
+    - name: Install Docker repository prerequisites
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+        state: present
+        update_cache: true
+
+    - name: Create APT keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker repository signing key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/{{ ansible_distribution | lower }}/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+
+    - name: Configure Docker APT repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch={{ docker_arch }} signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/{{ ansible_distribution | lower }}
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+        update_cache: true
+
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Ensure Docker service is enabled and running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create project directory
+      ansible.builtin.file:
+        path: "{{ korp_project_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Copy application source
+      ansible.builtin.copy:
+        src: ../app/
+        dest: "{{ korp_project_dir }}/app/"
+        mode: preserve
+
+    - name: Copy NGINX configuration
+      ansible.builtin.copy:
+        src: ../nginx/
+        dest: "{{ korp_project_dir }}/nginx/"
+        mode: preserve
+
+    - name: Copy Prometheus configuration
+      ansible.builtin.copy:
+        src: ../prometheus/
+        dest: "{{ korp_project_dir }}/prometheus/"
+        mode: preserve
+
+    - name: Copy Grafana configuration and dashboards
+      ansible.builtin.copy:
+        src: ../grafana/
+        dest: "{{ korp_project_dir }}/grafana/"
+        mode: preserve
+
+    - name: Copy Docker Compose definition
+      ansible.builtin.copy:
+        src: ../docker-compose.yml
+        dest: "{{ korp_project_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    - name: Inspect Korp Docker network
+      ansible.builtin.command:
+        cmd: docker network inspect {{ korp_network }}
+      register: korp_network_inspect
+      changed_when: false
+      failed_when: false
+
+    - name: Create Korp Docker network
+      ansible.builtin.command:
+        cmd: docker network create --driver bridge {{ korp_network }}
+      when: korp_network_inspect.rc != 0
+      changed_when: true
+
+    - name: Validate Docker Compose configuration
+      ansible.builtin.command:
+        cmd: docker compose config --quiet
+        chdir: "{{ korp_project_dir }}"
+      changed_when: false
+
+    - name: Build and start Korp stack
+      ansible.builtin.command:
+        cmd: docker compose up -d --build --remove-orphans
+        chdir: "{{ korp_project_dir }}"
+      register: compose_up
+      changed_when: >-
+        'Creating' in compose_up.stderr or
+        'Created' in compose_up.stderr or
+        'Starting' in compose_up.stderr or
+        'Started' in compose_up.stderr or
+        'Recreating' in compose_up.stderr or
+        'Recreated' in compose_up.stderr or
+        'Building' in compose_up.stderr or
+        'Built' in compose_up.stderr
+
+    - name: Wait for application through NGINX
+      ansible.builtin.uri:
+        url: http://127.0.0.1/projeto-korp
+        method: GET
+        return_content: true
+        status_code: 200
+      register: korp_response
+      retries: 20
+      delay: 3
+      until: korp_response.status == 200
+
+    - name: Display application response
+      ansible.builtin.debug:
+        var: korp_response.json
+
+    - name: Validate Prometheus target API
+      ansible.builtin.uri:
+        url: http://127.0.0.1:9090/-/ready
+        method: GET
+        status_code: 200
+      register: prometheus_ready
+      retries: 20
+      delay: 3
+      until: prometheus_ready.status == 200
+
+    - name: Validate Grafana health API
+      ansible.builtin.uri:
+        url: http://127.0.0.1:3000/api/health
+        method: GET
+        status_code: 200
+      register: grafana_ready
+      retries: 20
+      delay: 3
+      until: grafana_ready.status == 200
