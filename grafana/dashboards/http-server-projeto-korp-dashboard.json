@@ -1,0 +1,55 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Disponibilidade",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "up{job=\"http-server-projeto-korp\"}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN"}, "1": {"text": "UP"}}}]}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "type": "stat",
+      "title": "Total de requisições",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(http_requests_total{route=\"/projeto-korp\"})", "refId": "A"}],
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Requisições por segundo",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum(rate(http_requests_total{route=\"/projeto-korp\"}[5m]))", "legendFormat": "req/s", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Latência p95",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{route=\"/projeto-korp\"}[5m])))", "legendFormat": "p95", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Requisições por status HTTP",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"expr": "sum by (status) (rate(http_requests_total{route=\"/projeto-korp\"}[5m]))", "legendFormat": "HTTP {{status}}", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "reqps"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "tags": ["korp", "go", "prometheus"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "timezone": "browser",
+  "title": "HTTP Server Projeto Korp",
+  "uid": "http-server-projeto-korp",
+  "version": 1
+}
