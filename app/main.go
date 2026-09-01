@@ -38,7 +38,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func logging(next http.Handler) http.Handler {
@@ -59,9 +59,13 @@ func newServer() *http.Server {
 func runHealthcheck() error {
 	client := http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get("http://127.0.0.1:8080/healthz")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK { return fmt.Errorf("healthcheck returned %s", resp.Status) }
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("healthcheck returned %s", resp.Status)
+	}
 	return nil
 }
 
@@ -69,7 +73,9 @@ func main() {
 	healthcheck := flag.Bool("healthcheck", false, "check local service health")
 	flag.Parse()
 	if *healthcheck {
-		if err := runHealthcheck(); err != nil { log.Fatal(err) }
+		if err := runHealthcheck(); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 
@@ -77,7 +83,9 @@ func main() {
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("http-server-projeto-korp listening on %s", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed { errCh <- err }
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
 	}()
 
 	sigCh := make(chan os.Signal, 1)
@@ -90,5 +98,8 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil { log.Printf("graceful shutdown failed: %v", err); _ = srv.Close() }
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Printf("graceful shutdown failed: %v", err)
+		_ = srv.Close()
+	}
 }
