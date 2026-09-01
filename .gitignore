@@ -1,0 +1,4 @@
+http-server-projeto-korp
+*.log
+.env
+.DS_Store
