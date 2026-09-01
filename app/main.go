@@ -9,13 +9,62 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type projetoResponse struct {
 	Nome    string `json:"nome"`
 	Horario string `json:"horario"`
+}
+
+type metrics struct {
+	requests *prometheus.CounterVec
+	duration *prometheus.HistogramVec
+}
+
+func newMetrics(reg prometheus.Registerer) *metrics {
+	m := &metrics{
+		requests: prometheus.NewCounterVec(prometheus.CounterOpts{Name: "http_requests_total", Help: "Total de requisicoes HTTP da aplicacao."}, []string{"method", "route", "status"}),
+		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "http_request_duration_seconds", Help: "Duracao das requisicoes HTTP da aplicacao em segundos.", Buckets: prometheus.DefBuckets}, []string{"method", "route", "status"}),
+	}
+	reg.MustRegister(m.requests, m.duration)
+	return m
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func routeLabel(path string) string {
+	switch path {
+	case "/projeto-korp", "/healthz":
+		return path
+	default:
+		return "unknown"
+	}
+}
+
+func instrument(m *metrics, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		route := routeLabel(r.URL.Path)
+		status := strconv.Itoa(recorder.status)
+		m.requests.WithLabelValues(r.Method, route, status).Inc()
+		m.duration.WithLabelValues(r.Method, route, status).Observe(time.Since(start).Seconds())
+	})
 }
 
 func projetoHandler(now func() time.Time) http.HandlerFunc {
@@ -50,10 +99,16 @@ func logging(next http.Handler) http.Handler {
 }
 
 func newServer() *http.Server {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/projeto-korp", projetoHandler(time.Now))
-	mux.HandleFunc("/healthz", healthHandler)
-	return &http.Server{Addr: ":8080", Handler: logging(mux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	registry := prometheus.NewRegistry()
+	m := newMetrics(registry)
+	appMux := http.NewServeMux()
+	appMux.HandleFunc("/projeto-korp", projetoHandler(time.Now))
+	appMux.HandleFunc("/healthz", healthHandler)
+
+	rootMux := http.NewServeMux()
+	rootMux.Handle("/metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
+	rootMux.Handle("/", instrument(m, appMux))
+	return &http.Server{Addr: ":8080", Handler: logging(rootMux), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 }
 
 func runHealthcheck() error {
