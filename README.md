@@ -96,7 +96,7 @@ sum by (status) (rate(http_requests_total{route="/projeto-korp"}[5m]))
 
 ## Provisionamento com Ansible
 
-O caminho principal de execução do desafio é o playbook Ansible. Ele foi preparado para Debian/Ubuntu e deve ser executado por um usuário com acesso a `sudo`.
+O caminho principal de execução do desafio é o playbook Ansible. Ele suporta explicitamente Ubuntu e Debian e deve ser executado por um usuário com acesso a `sudo`.
 
 Na máquina Linux, instale apenas o Ansible e execute, a partir da raiz do repositório:
 
@@ -112,19 +112,21 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 Com um único comando, o playbook:
 
-1. valida o sistema operacional;
+1. valida se o host é Ubuntu ou Debian;
 2. instala e configura o repositório oficial do Docker;
 3. instala Docker Engine, Buildx e Docker Compose v2;
 4. habilita e inicia o Docker;
 5. copia aplicação e configurações para `/opt/http-server-projeto-korp`;
-6. cria a rede bridge `korp-network` de forma idempotente;
+6. cria a rede bridge `korp-network` somente quando ela ainda não existe;
 7. valida o arquivo Compose;
-8. constrói a imagem Go e sobe NGINX, aplicação, Prometheus e Grafana;
+8. reconcilia a stack com `docker compose up -d --build --remove-orphans`;
 9. aguarda o serviço responder através do NGINX;
 10. exibe no console a resposta JSON de `/projeto-korp`;
 11. valida readiness do Prometheus e health do Grafana.
 
 A rede é criada explicitamente pelo Ansible e declarada como `external` no Compose. Isso deixa clara a separação de responsabilidades: Ansible provisiona a infraestrutura Docker e o Compose gerencia os containers da aplicação.
+
+O playbook pode ser executado novamente com segurança: pacotes, arquivos, serviço Docker e rede são tratados de forma declarativa ou condicional, enquanto o `docker compose up` reconcilia o estado desejado dos containers. Como a CLI do Compose não fornece ao Ansible uma indicação estável de mudança em todas as versões, essa etapa é reportada como `ok`; o estado real é validado pelos endpoints ao final do playbook.
 
 ## Execução manual com Docker
 
@@ -174,7 +176,7 @@ make vet
 ## Decisões técnicas
 
 - **Ansible como orquestrador do provisionamento:** prepara o host, instala Docker, cria a rede e executa/valida a stack.
-- **Idempotência:** módulos declarativos são usados para pacotes, arquivos e serviços; a rede só é criada quando não existe.
+- **Reexecução segura:** módulos declarativos são usados para pacotes, arquivos e serviços; a rede só é criada quando não existe e o Compose reconcilia os containers.
 - **Rede bridge explícita:** `korp-network` é criada pelo Ansible e consumida pelo Compose como rede externa.
 - **Go + biblioteca padrão:** mantém o serviço simples; `client_golang` é utilizado apenas para instrumentação Prometheus.
 - **Métricas com baixa cardinalidade:** labels usam método, rota normalizada e status, evitando paths arbitrários.
