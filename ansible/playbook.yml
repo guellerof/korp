@@ -144,7 +144,6 @@
       ansible.builtin.command:
         cmd: docker compose up -d --build --remove-orphans
         chdir: "{{ korp_project_dir }}"
-      register: compose_up
       changed_when: false
 
     - name: Wait for application through NGINX
