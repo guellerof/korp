@@ -74,6 +74,7 @@ sum by (status) (rate(http_requests_total{route="/projeto-korp"}[5m]))
 │   ├── inventory.ini
 │   └── playbook.yml
 ├── app/
+│   ├── .dockerignore
 │   ├── Dockerfile
 │   ├── go.mod
 │   ├── go.sum
@@ -128,6 +129,8 @@ A rede é criada explicitamente pelo Ansible e declarada como `external` no Comp
 
 O playbook pode ser executado novamente com segurança: pacotes, arquivos, serviço Docker e rede são tratados de forma declarativa ou condicional, enquanto o `docker compose up` reconcilia o estado desejado dos containers. Como a CLI do Compose não fornece ao Ansible uma indicação estável de mudança em todas as versões, essa etapa é reportada como `ok`; o estado real é validado pelos endpoints ao final do playbook.
 
+Durante a validação final, o playbook foi executado duas vezes consecutivas no mesmo ambiente. A segunda execução concluiu com `changed=0`, `unreachable=0` e `failed=0`, confirmando a reexecução segura do provisionamento.
+
 ## Execução manual com Docker
 
 Como a rede é provisionada explicitamente, para executar o Compose sem Ansible crie-a primeiro:
@@ -160,10 +163,10 @@ No Prometheus, abra `Status > Target health` e confirme que o job `http-server-p
 
 No Grafana, acesse a pasta `Korp` e abra o dashboard `HTTP Server Projeto Korp`.
 
-Para verificar que a aplicação continua sem publicar 8080 no host:
+Para verificar a stack provisionada pelo Ansible e confirmar que a aplicação continua sem publicar 8080 no host:
 
 ```bash
-docker compose ps
+docker compose -f /opt/http-server-projeto-korp/docker-compose.yml ps
 ```
 
 ## Testes
